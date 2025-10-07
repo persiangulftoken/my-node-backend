@@ -13,9 +13,3 @@
     "express": "^4.19.2"
   }
 }
-```
-**تغییر کلیدی:** من بخش `"scripts"` را اضافه کرده‌ام:
-```json
-"scripts": {
-  "start": "node server.js"
-}
