@@ -19,31 +19,13 @@ const MIN_REQUIRED_BALANCE = 1;
 // Initialize Solana Connection (using Mainnet-Beta)
 const connection = new web3.Connection(web3.clusterApiUrl('mainnet-beta'));
 
-// --- CORS Configuration ---
-// Allowing access from the specific domain (for production security) 
-// and localhost for development testing.
-const allowedOrigins = [
-    'http://localhost', // For local development testing
-    'http://localhost:8080', 
-    'https://your-wordpress-domain.com' // Replace with your actual WordPress domain or static host URL
-];
-
-const corsOptions = {
-    origin: (origin, callback) => {
-        // Allow requests with no origin (like mobile apps or curl)
-        if (!origin) return callback(null, true);
-        // Check if the origin is in the allowed list
-        if (allowedOrigins.indexOf(origin) !== -1 || origin.endsWith('.onrender.com')) {
-            callback(null, true);
-        } else {
-            // Log the blocked origin for troubleshooting
-            console.error(`CORS Blocked: Origin ${origin} not allowed.`);
-            callback(new Error('Not allowed by CORS'));
-        }
-    }
-};
-
-app.use(cors(corsOptions));
+// --- CORS Configuration (Temporary open access for testing) ---
+// Allowing all origins (*) to ensure the WordPress domain can connect.
+app.use(cors({
+    origin: '*', // Allow all origins
+    methods: ['GET', 'POST'],
+    allowedHeaders: ['Content-Type', 'Authorization']
+}));
 app.use(express.json());
 
 // --- Helper Function: Check PGT Balance ---
@@ -69,6 +51,7 @@ async function checkPgtBalance(walletAddressString) {
         return balance;
     } catch (error) {
         // Return 0 if the token account is not found or other RPC error occurs
+        // console.error("Error fetching balance:", error.message);
         return 0;
     }
 }
@@ -148,4 +131,3 @@ app.listen(PORT, () => {
     console.log(`\nPGT Auth Server (Node.js) listening on port ${PORT}.`);
     console.log(`-> Public API URL: https://my-node-backend-ih5r.onrender.com`);
 });
-```eof
