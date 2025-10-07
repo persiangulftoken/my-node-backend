@@ -2,9 +2,9 @@
   "name": "pgt-backend",
   "version": "1.0.0",
   "description": "PGT Solana Auth API running on Render",
-  "main": "server.js",
+  "main": "Node.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node Node.js"
   },
   "dependencies": {
     "@solana/spl-token": "^0.4.7",
