@@ -19,13 +19,15 @@ const MIN_REQUIRED_BALANCE = 1;
 // Initialize Solana Connection (using Mainnet-Beta)
 const connection = new web3.Connection(web3.clusterApiUrl('mainnet-beta'));
 
-// --- CORS Configuration (Temporary open access for testing) ---
-// Allowing all origins (*) to ensure the WordPress domain can connect.
-app.use(cors({
-    origin: '*', // Allow all origins
+// --- CORS Configuration (اجازه موقت به همه دامنه‌ها برای تست) ---
+// در محیط واقعی، شما باید فقط دامنه وردپرس خود را مجاز کنید.
+const corsOptions = {
+    origin: '*', // این wildcard به طور موقت به همه اجازه دسترسی می‌دهد.
     methods: ['GET', 'POST'],
     allowedHeaders: ['Content-Type', 'Authorization']
-}));
+};
+
+app.use(cors(corsOptions));
 app.use(express.json());
 
 // --- Helper Function: Check PGT Balance ---
@@ -51,7 +53,6 @@ async function checkPgtBalance(walletAddressString) {
         return balance;
     } catch (error) {
         // Return 0 if the token account is not found or other RPC error occurs
-        // console.error("Error fetching balance:", error.message);
         return 0;
     }
 }
