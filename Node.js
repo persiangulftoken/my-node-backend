@@ -16,13 +16,19 @@ const PORT = process.env.PORT || 3000;
 // --- 1. FIREBASE SETUP ---
 // FIREBASE_CREDENTIALS must be set as an Environment Variable in Render
 if (process.env.FIREBASE_CREDENTIALS) {
-    const serviceAccount = JSON.parse(process.env.FIREBASE_CREDENTIALS);
-    admin.initializeApp({
-        credential: admin.credential.cert(serviceAccount)
-    });
+    // Attempt to parse the credentials JSON stored in the environment variable
+    try {
+        const serviceAccount = JSON.parse(process.env.FIREBASE_CREDENTIALS);
+        admin.initializeApp({
+            credential: admin.credential.cert(serviceAccount)
+        });
+    } catch (e) {
+        console.error("FIREBASE_CREDENTIALS parse error. Ensure the JSON is correctly formatted and not escaped.");
+        console.error(e);
+        // Do not proceed with Firestore if initialization fails
+    }
 } else {
     console.error("FIREBASE_CREDENTIALS environment variable is not set. Firestore will not work.");
-    // In a production environment, you should exit the process here.
 }
 
 const db = admin.firestore();
@@ -37,7 +43,7 @@ const connection = new web3.Connection(web3.clusterApiUrl('mainnet-beta'));
 
 // Define Tier thresholds for validation (must match frontend logic)
 const TIER_MAPPING = {
-    // We only need to check minimum requirement for ticket distribution
+    // Add all required museum IDs and their required tiers here
     saadabad_palace: 'Silver' // Example: Saadabad requires Silver tier
 };
 
@@ -138,13 +144,11 @@ app.post('/api/claim-ticket', async (req, res) => {
 
     try {
         // Validation Check 1: Tier Qualification
-        // We use the Tier sent from the frontend (which was checked against on-chain balance)
         const requiredTier = TIER_MAPPING[museumId];
         
         // Simple Tier Check (Base is the lowest, Silver is higher)
-        // If required is Silver, Gold/Platinum are also qualified.
-        if (requiredTier === 'Silver' && (tier !== 'Silver' && tier !== 'Gold' && tier !== 'Platinum')) {
-            return res.status(403).json({ success: false, message: 'شما به Tier Silver برای دریافت این بلیط نیاز دارید.' });
+        if (requiredTier && (tier !== requiredTier && tier !== 'Gold' && tier !== 'Platinum')) {
+            return res.status(403).json({ success: false, message: `شما به Tier ${requiredTier} برای دریافت این بلیط نیاز دارید.` });
         }
         
         // --- Find and Claim an Available Ticket (Transactional Write) ---
