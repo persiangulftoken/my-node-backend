@@ -1,36 +1,58 @@
 /**
- * PGT_Web3_Server_for_Render: Node.js Backend API
- * Handles: 1. Token Holding Verification (Auth) 2. Secure QR Code Ticket Generation
- * Deployed on Render (Public URL: https://my-node-backend-ih5r.onrender.com)
+ * PGT_Web3_Server_with_Firestore: Node.js Backend API
+ * Handles: 1. Token Holding Verification (Auth) 2. Secure Unique Ticket Distribution (Firestore)
+ * Deployed on Render.
  */
 const express = require('express');
 const cors = require('cors');
 const web3 = require('@solana/web3.js');
 const { getAssociatedTokenAddress, TOKEN_PROGRAM_ID } = require('@solana/spl-token');
+const admin = require('firebase-admin');
 
 const app = express();
 // Render assigns the port dynamically, so we use process.env.PORT
 const PORT = process.env.PORT || 3000; 
 
-// --- Project Configuration (PGT) ---
+// --- 1. FIREBASE SETUP ---
+// FIREBASE_CREDENTIALS must be set as an Environment Variable in Render
+if (process.env.FIREBASE_CREDENTIALS) {
+    const serviceAccount = JSON.parse(process.env.FIREBASE_CREDENTIALS);
+    admin.initializeApp({
+        credential: admin.credential.cert(serviceAccount)
+    });
+} else {
+    console.error("FIREBASE_CREDENTIALS environment variable is not set. Firestore will not work.");
+    // In a production environment, you should exit the process here.
+}
+
+const db = admin.firestore();
+const ticketsCollection = db.collection('tickets'); // Collection name used: 'tickets'
+
+// --- 2. PROJECT CONFIGURATION (PGT) ---
 const PGT_MINT_ADDRESS = new web3.PublicKey('FX9rdswoncAQRTcJZq7pVbJwkD4jXKEbRQLHz3t5utgh'); 
 const MIN_REQUIRED_BALANCE = 1; 
 
 // Initialize Solana Connection (using Mainnet-Beta)
 const connection = new web3.Connection(web3.clusterApiUrl('mainnet-beta'));
 
-// --- CORS Configuration (اجازه موقت به همه دامنه‌ها برای تست) ---
-// در محیط واقعی، شما باید فقط دامنه وردپرس خود را مجاز کنید.
-const corsOptions = {
-    origin: '*', // این wildcard به طور موقت به همه اجازه دسترسی می‌دهد.
-    methods: ['GET', 'POST'],
-    allowedHeaders: ['Content-Type', 'Authorization']
+// Define Tier thresholds for validation (must match frontend logic)
+const TIER_MAPPING = {
+    // We only need to check minimum requirement for ticket distribution
+    saadabad_palace: 'Silver' // Example: Saadabad requires Silver tier
 };
 
+// --- 3. CORS Configuration ---
+const corsOptions = {
+    // Allowing all origins for easy debugging. FOR PRODUCTION, change '*' to your WordPress URL!
+    origin: '*', 
+    methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
+    credentials: true,
+    optionsSuccessStatus: 204
+};
 app.use(cors(corsOptions));
 app.use(express.json());
 
-// --- Helper Function: Check PGT Balance ---
+// --- 4. Helper Function: Check PGT Balance ---
 async function checkPgtBalance(walletAddressString) {
     let userWalletAddress;
     try {
@@ -57,13 +79,26 @@ async function checkPgtBalance(walletAddressString) {
     }
 }
 
+// --- 5. Helper Function: Determine Tier for Server-Side Validation ---
+// Note: This logic must match the frontend logic
+const getCurrentTierLevel = (balance) => {
+    // PGT price: $0.0003
+    const TIER_THRESHOLDS = {
+        SILVER: 333334,
+        GOLD: 1666667,
+        PLATINUM: 3333334
+    };
+    if (balance >= TIER_THRESHOLDS.PLATINUM) return 'Platinum';
+    if (balance >= TIER_THRESHOLDS.GOLD) return 'Gold';
+    if (balance >= TIER_THRESHOLDS.SILVER) return 'Silver';
+    return 'Base';
+};
 
 // =================================================================
-// 1. Endpoint for Wallet Authentication (Auth)
+// 6. Endpoint for Wallet Authentication (Auth)
 // =================================================================
 app.post('/api/auth/pgt', async (req, res) => {
     const { walletAddress } = req.body;
-
     if (!walletAddress) {
         return res.status(400).json({ success: false, message: 'آدرس کیف پول ارسال نشده است.' });
     }
@@ -92,40 +127,78 @@ app.post('/api/auth/pgt', async (req, res) => {
 
 
 // =================================================================
-// 2. Endpoint for QR Code Generation (Secure Ticket)
+// 7. Endpoint for Claiming Unique Tickets (Firestore)
 // =================================================================
-app.post('/api/generate-qr', async (req, res) => {
-    const { walletAddress, tier } = req.body;
+app.post('/api/claim-ticket', async (req, res) => {
+    const { walletAddress, museumId, tier } = req.body;
     
-    // Quick re-validation (a full secure system would verify token ownership again here)
-    if (!walletAddress || !tier) {
-        return res.status(400).json({ success: false, message: 'اطلاعات آدرس و Tier ناقص است.' });
+    if (!walletAddress || !museumId || !tier) {
+        return res.status(400).json({ success: false, message: 'اطلاعات آدرس، موزه یا Tier ناقص است.' });
     }
-    
-    const QR_EXPIRY_MINUTES = 5;
-    const now = Date.now();
-    const expiryTime = now + (QR_EXPIRY_MINUTES * 60 * 1000); // 5 minutes from now
-    
-    // Create a secure, time-sensitive payload (simulated secure token/ticket)
-    const ticketPayload = {
-        // In a real security system, this payload would be signed/encrypted.
-        wallet: walletAddress,
-        tier: tier,
-        issued: now,
-        expires: expiryTime,
-        service: 'PGT_Museum_Access'
-    };
-    
-    // Convert payload to a string (this is the content of the QR Code)
-    const ticketString = JSON.stringify(ticketPayload);
 
-    return res.json({
-        success: true,
-        message: `کد دسترسی با موفقیت تولید شد. انقضا: ${QR_EXPIRY_MINUTES} دقیقه.`,
-        qrData: ticketString,
-        expiresAt: expiryTime
-    });
+    try {
+        // Validation Check 1: Tier Qualification
+        // We use the Tier sent from the frontend (which was checked against on-chain balance)
+        const requiredTier = TIER_MAPPING[museumId];
+        
+        // Simple Tier Check (Base is the lowest, Silver is higher)
+        // If required is Silver, Gold/Platinum are also qualified.
+        if (requiredTier === 'Silver' && (tier !== 'Silver' && tier !== 'Gold' && tier !== 'Platinum')) {
+            return res.status(403).json({ success: false, message: 'شما به Tier Silver برای دریافت این بلیط نیاز دارید.' });
+        }
+        
+        // --- Find and Claim an Available Ticket (Transactional Write) ---
+        
+        // 1. Search for an available ticket for this museum
+        const availableTicketQuery = ticketsCollection
+            .where('museumId', '==', museumId)
+            .where('status', '==', 'available')
+            .limit(1);
+
+        const snapshot = await availableTicketQuery.get();
+
+        if (snapshot.empty) {
+            return res.status(404).json({ success: false, message: 'متأسفانه، موجودی بلیط این موزه به پایان رسیده است.' });
+        }
+        
+        const ticketDoc = snapshot.docs[0];
+        const ticketRef = ticketDoc.ref;
+        const ticketData = ticketDoc.data();
+
+        // 2. Claim the ticket in a Transaction (ensures atomicity)
+        await db.runTransaction(async (t) => {
+            const doc = await t.get(ticketRef);
+            
+            // Re-check: Was it claimed milliseconds ago?
+            if (doc.data().status !== 'available') {
+                throw new Error('Claimed by another user.');
+            }
+
+            // Update the document status and assign it to the user
+            t.update(ticketRef, { 
+                status: 'claimed', 
+                assignedTo: walletAddress,
+                assignedTime: admin.firestore.FieldValue.serverTimestamp()
+            });
+        });
+
+        // 3. Return the unique ticket code
+        return res.status(200).json({
+            success: true,
+            message: 'بلیط یکتای شما با موفقیت توزیع شد.',
+            ticketCode: ticketData.code,
+            museumName: ticketData.museumName || 'بلیط موزه'
+        });
+
+    } catch (error) {
+        console.error('Ticket Claim Error:', error);
+        if (error.message === 'Claimed by another user.') {
+             return res.status(409).json({ success: false, message: 'در لحظه درخواست شما، این بلیط توزیع شد. لطفاً دوباره تلاش کنید.' });
+        }
+        return res.status(500).json({ success: false, message: 'خطای سرور در ارتباط با دیتابیس (Firestore).' });
+    }
 });
+
 
 // Start the server
 app.listen(PORT, () => {
