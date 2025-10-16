@@ -1,16 +1,16 @@
 {
   "name": "pgt-backend",
   "version": "1.0.0",
-  "description": "PGT Solana Auth API running on Render with Firebase Firestore",
+  "description": "PGT Solana Auth API running on Render (Firestore enabled)",
   "main": "Node.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node Node.js"
   },
   "dependencies": {
     "@solana/spl-token": "^0.4.7",
     "@solana/web3.js": "^1.91.5",
     "cors": "^2.8.5",
     "express": "^4.19.2",
-    "firebase-admin": "^11.11.1" 
+    "firebase-admin": "^12.1.0" 
   }
 }
